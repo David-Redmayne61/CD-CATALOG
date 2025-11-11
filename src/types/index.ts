@@ -1,0 +1,17 @@
+export interface CD {
+  id?: string;
+  title: string;
+  artist: string;
+  year: number;
+  genre: string;
+  barcode?: string;
+  coverUrl?: string;
+  notes?: string;
+  dateAdded: Date;
+}
+
+export type RootStackParamList = {
+  Home: undefined;
+  AddCD: { barcode?: string } | undefined;
+  BarcodeScanner: undefined;
+};
