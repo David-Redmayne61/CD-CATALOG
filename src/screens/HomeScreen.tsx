@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, TextInput, ScrollView, Platform } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList, CD } from '../types';
-import { getCDs, deleteCD } from '../services/firebase';
+import { getCDs, deleteCD, updateCD } from '../services/firebase';
 import { CDCard } from '../components/CDCard';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
@@ -192,6 +192,117 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     }, 250);
   };
 
+  const [refreshingCovers, setRefreshingCovers] = useState(false);
+  const [coverProgress, setCoverProgress] = useState({ current: 0, total: 0 });
+
+  const handleRefreshCoverArt = async () => {
+    if (Platform.OS !== 'web') {
+      alert('This feature only works on desktop browsers.');
+      return;
+    }
+
+    const cdsWithoutCovers = cds.filter(cd => !cd.coverUrl && cd.barcode);
+    
+    if (cdsWithoutCovers.length === 0) {
+      alert('All CDs already have cover art or no barcode!');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Found ${cdsWithoutCovers.length} CD(s) without cover art.\n\nFetch cover images now?`
+    );
+
+    if (!confirmed) return;
+
+    setRefreshingCovers(true);
+    setCoverProgress({ current: 0, total: cdsWithoutCovers.length });
+    let successCount = 0;
+
+    for (let i = 0; i < cdsWithoutCovers.length; i++) {
+      const cd = cdsWithoutCovers[i];
+      setCoverProgress({ current: i + 1, total: cdsWithoutCovers.length });
+
+      try {
+        // Look up the barcode in MusicBrainz
+        const barcodeFormats = [
+          cd.barcode,
+          cd.barcode!.padStart(13, '0'),
+          cd.barcode!.padStart(12, '0')
+        ];
+
+        let releaseId = null;
+
+        for (const barcode of barcodeFormats) {
+          try {
+            const mbResponse = await fetch(
+              `https://musicbrainz.org/ws/2/release?query=barcode:${barcode}&fmt=json`,
+              {
+                headers: {
+                  'User-Agent': 'CDCatalog/1.0.0 (davidnredmayne@gmail.com)',
+                  'Accept': 'application/json'
+                }
+              }
+            );
+
+            if (mbResponse.ok) {
+              const mbData = await mbResponse.json();
+              if (mbData.releases && mbData.releases.length > 0) {
+                releaseId = mbData.releases[0].id;
+                break;
+              }
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } catch (error) {
+            console.error('Error fetching MusicBrainz for', barcode, error);
+          }
+        }
+
+        if (!releaseId) continue;
+
+        // Fetch cover art
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const coverResponse = await fetch(
+          `https://coverartarchive.org/release/${releaseId}`,
+          {
+            headers: {
+              'User-Agent': 'CDCatalog/1.0.0 (davidnredmayne@gmail.com)',
+              'Accept': 'application/json'
+            }
+          }
+        );
+
+        if (coverResponse.ok) {
+          const coverData = await coverResponse.json();
+          if (coverData.images && coverData.images.length > 0) {
+            const frontCover = coverData.images.find((img: any) => img.front) || coverData.images[0];
+            if (frontCover && frontCover.thumbnails && frontCover.thumbnails['500']) {
+              const imageUrl = frontCover.thumbnails['500'].replace('http://', 'https://');
+              
+              // Update the CD with the cover URL
+              if (cd.id) {
+                await updateCD(cd.id, { coverUrl: imageUrl });
+                successCount++;
+              }
+            }
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error('Error fetching cover for CD:', cd.title, error);
+      }
+    }
+
+    setRefreshingCovers(false);
+    setCoverProgress({ current: 0, total: 0 });
+    
+    alert(`✅ Complete!\n\nFetched ${successCount} of ${cdsWithoutCovers.length} cover images.`);
+    
+    // Reload the CDs to show new covers
+    loadCDs();
+  };
+
   // Filter and sort CDs based on search query
   const filteredCDs = cds
     .filter(cd => {
@@ -251,6 +362,17 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                 onPress={handlePrint}
               >
                 <Text style={styles.printButtonText}>🖨️ Print / Save as PDF</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.printButton, styles.refreshButton]}
+                onPress={handleRefreshCoverArt}
+                disabled={refreshingCovers}
+              >
+                <Text style={styles.printButtonText}>
+                  {refreshingCovers 
+                    ? `🔄 ${coverProgress.current}/${coverProgress.total}...` 
+                    : '🖼️ Refresh Cover Art'}
+                </Text>
               </TouchableOpacity>
               {searchQuery.trim() && (
                 <Text style={styles.resultCount}>
@@ -398,6 +520,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  refreshButton: {
+    backgroundColor: '#007AFF',
+    marginLeft: 8,
   },
   resultCount: {
     fontSize: 14,

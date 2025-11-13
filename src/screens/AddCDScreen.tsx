@@ -158,7 +158,7 @@ export const AddCDScreen: React.FC<Props> = ({ navigation, route }) => {
         // Fetch cover art from Cover Art Archive
         if (releaseId) {
           try {
-            // Add a small delay to avoid rate limiting
+            // Add a delay to avoid rate limiting
             await new Promise(resolve => setTimeout(resolve, 500));
             
             const coverResponse = await fetch(
@@ -178,8 +178,10 @@ export const AddCDScreen: React.FC<Props> = ({ navigation, route }) => {
                 // Use the front cover if available, or the first image
                 const frontCover = coverData.images.find((img: any) => img.front) || coverData.images[0];
                 if (frontCover && frontCover.thumbnails && frontCover.thumbnails['500']) {
-                  setCoverUrl(frontCover.thumbnails['500']);
-                  console.log('Cover art found:', frontCover.thumbnails['500']);
+                  // Convert http to https for iOS Safari compatibility
+                  const imageUrl = frontCover.thumbnails['500'].replace('http://', 'https://');
+                  setCoverUrl(imageUrl);
+                  console.log('Cover art found:', imageUrl);
                 }
               }
             }

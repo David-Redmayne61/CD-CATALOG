@@ -12,7 +12,7 @@ https://musicbrainz.org/ws/2/release/?query=barcode:{BARCODE}&fmt=json
 
 **Example:**
 ```
-https://musicbrainz.org/ws/2/release/?query=barcode:093624590125&fmt=json
+https://musicbrainz.org/ws/2/release/?query=barcode:72435432462&fmt=json
 ```
 
 **Response includes:**
