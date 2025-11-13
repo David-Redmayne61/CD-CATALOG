@@ -10,11 +10,13 @@ import {
   Platform,
   Alert,
   Image,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
-import { addCD } from '../services/firebase';
+import { addCD, updateCD, checkDuplicateBarcode } from '../services/firebase';
 
 type AddCDScreenNavigationProp = StackNavigationProp<RootStackParamList, 'AddCD'>;
 type AddCDScreenRouteProp = RouteProp<RootStackParamList, 'AddCD'>;
@@ -25,16 +27,47 @@ interface Props {
 }
 
 export const AddCDScreen: React.FC<Props> = ({ navigation, route }) => {
-  const [title, setTitle] = useState('');
-  const [artist, setArtist] = useState('');
-  const [year, setYear] = useState('');
-  const [genre, setGenre] = useState('');
-  const [barcode, setBarcode] = useState(route.params?.barcode || '');
-  const [coverUrl, setCoverUrl] = useState('');
-  const [notes, setNotes] = useState('');
+  const editCD = route.params?.editCD;
+  const isEditing = !!editCD;
+
+  const [title, setTitle] = useState(editCD?.title || '');
+  const [artist, setArtist] = useState(editCD?.artist || '');
+  const [year, setYear] = useState(editCD?.year?.toString() || '');
+  const [genre, setGenre] = useState(editCD?.genre || '');
+  const [barcode, setBarcode] = useState(editCD?.barcode || route.params?.barcode || '');
+  const [coverUrl, setCoverUrl] = useState(editCD?.coverUrl || '');
+  const [duration, setDuration] = useState(editCD?.duration || 0);
+  const [notes, setNotes] = useState(editCD?.notes || '');
   const [saving, setSaving] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
+  const [showGenrePicker, setShowGenrePicker] = useState(false);
   const lookupTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const genres = [
+    'Rock',
+    'Pop',
+    'Classical',
+    'Classical Compilation',
+    'Compilation',
+    'Jazz',
+    'Blues',
+    'Country',
+    'Electronic',
+    'Folk',
+    'Hip Hop',
+    'R&B/Soul',
+    'Metal',
+    'Punk',
+    'Reggae',
+    'Alternative',
+    'Indie',
+    'World Music',
+    'Soundtrack',
+    'Opera',
+    'Gospel',
+    'Dance',
+    'Other',
+  ];
 
   const lookupBarcode = async (barcodeValue: string) => {
     if (!barcodeValue || barcodeValue.length < 8) return;
@@ -153,6 +186,44 @@ export const AddCDScreen: React.FC<Props> = ({ navigation, route }) => {
           } catch (coverError) {
             console.log('Cover art not available:', coverError);
           }
+
+          // Fetch duration (total playing time)
+          try {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            const durationResponse = await fetch(
+              `https://musicbrainz.org/ws/2/release/${releaseId}?fmt=json&inc=recordings`,
+              {
+                headers: {
+                  'User-Agent': 'CDCatalog/1.0.0 (davidnredmayne@gmail.com)'
+                }
+              }
+            );
+            
+            if (durationResponse.ok) {
+              const durationData = await durationResponse.json();
+              if (durationData.media && durationData.media.length > 0) {
+                // Calculate total duration from all tracks
+                let totalMilliseconds = 0;
+                durationData.media.forEach((medium: any) => {
+                  if (medium.tracks) {
+                    medium.tracks.forEach((track: any) => {
+                      if (track.length) {
+                        totalMilliseconds += track.length;
+                      }
+                    });
+                  }
+                });
+                
+                // Convert to minutes and round
+                const totalMinutes = Math.round(totalMilliseconds / 60000);
+                setDuration(totalMinutes);
+                console.log('Total duration:', totalMinutes, 'minutes');
+              }
+            }
+          } catch (durationError) {
+            console.log('Duration not available:', durationError);
+          }
         }
 
         if (Platform.OS === 'web') {
@@ -221,6 +292,42 @@ export const AddCDScreen: React.FC<Props> = ({ navigation, route }) => {
       return;
     }
 
+    // Check for duplicate barcode first (only when adding new or if barcode changed)
+    if (barcode.trim()) {
+      try {
+        const duplicate = await checkDuplicateBarcode(barcode.trim(), isEditing ? editCD?.id : undefined);
+        
+        if (duplicate) {
+          const message = `A CD with this barcode already exists:\n\n"${duplicate.title}" by ${duplicate.artist}\n\nDo you want to add it anyway?`;
+          
+          let shouldContinue = false;
+          
+          if (Platform.OS === 'web') {
+            shouldContinue = window.confirm(`⚠️ Duplicate Found!\n\n${message}`);
+          } else {
+            // For native, use a promise to wait for user response
+            shouldContinue = await new Promise<boolean>((resolve) => {
+              Alert.alert(
+                'Duplicate Found',
+                message,
+                [
+                  { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                  { text: 'Add Anyway', onPress: () => resolve(true) }
+                ]
+              );
+            });
+          }
+          
+          if (!shouldContinue) {
+            return; // User cancelled, don't save
+          }
+        }
+      } catch (error) {
+        console.error('Error checking duplicate:', error);
+        // Continue with save even if duplicate check fails
+      }
+    }
+
     setSaving(true);
     try {
       const cdData: any = {
@@ -238,22 +345,33 @@ export const AddCDScreen: React.FC<Props> = ({ navigation, route }) => {
       if (coverUrl) {
         cdData.coverUrl = coverUrl;
       }
+      if (duration && duration > 0) {
+        cdData.duration = duration;
+      }
       if (notes.trim()) {
         cdData.notes = notes.trim();
       }
 
-      await addCD(cdData);
+      if (isEditing && editCD?.id) {
+        // Update existing CD
+        await updateCD(editCD.id, cdData);
+      } else {
+        // Add new CD
+        await addCD(cdData);
+      }
 
       // Show success alert - using platform-specific handling
+      const successMessage = isEditing 
+        ? `✅ Success!\n\n"${title}" by ${artist} has been updated!`
+        : `✅ Success!\n\n"${title}" by ${artist} has been added to your collection!`;
+
       if (Platform.OS === 'web') {
-        const userConfirmed = window.confirm(
-          `✅ Success!\n\n"${title}" by ${artist} has been added to your collection!`
-        );
+        window.confirm(successMessage);
         navigation.goBack();
       } else {
         Alert.alert(
           'Success', 
-          `"${title}" by ${artist} has been added to your collection!`, 
+          successMessage, 
           [{ text: 'OK', onPress: () => navigation.goBack() }]
         );
       }
@@ -317,14 +435,30 @@ export const AddCDScreen: React.FC<Props> = ({ navigation, route }) => {
           maxLength={4}
         />
 
-        <Text style={styles.label}>Genre</Text>
+        <Text style={styles.label}>Duration (minutes)</Text>
         <TextInput
           style={styles.input}
-          value={genre}
-          onChangeText={setGenre}
-          placeholder="e.g., Rock, Pop, Jazz"
+          value={duration > 0 ? duration.toString() : ''}
+          onChangeText={(text) => {
+            const numValue = parseInt(text, 10);
+            setDuration(isNaN(numValue) ? 0 : numValue);
+          }}
+          placeholder="Optional - auto-filled from lookup"
           placeholderTextColor="#999"
+          keyboardType="numeric"
         />
+
+        <Text style={styles.label}>Genre</Text>
+        <TouchableOpacity
+          style={styles.genrePicker}
+          onPress={() => setShowGenrePicker(true)}
+        >
+          <Text style={genre ? styles.genrePickerText : styles.genrePickerPlaceholder}>
+            {genre || 'Select a genre'}
+          </Text>
+          <Text style={styles.genrePickerArrow}>▼</Text>
+        </TouchableOpacity>
+
 
         <Text style={styles.label}>Barcode (Optional)</Text>
         <TextInput
@@ -378,10 +512,49 @@ export const AddCDScreen: React.FC<Props> = ({ navigation, route }) => {
           disabled={saving}
         >
           <Text style={styles.saveButtonText}>
-            {saving ? 'Saving...' : 'Save CD'}
+            {saving ? 'Saving...' : (isEditing ? 'Update CD' : 'Save CD')}
           </Text>
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showGenrePicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowGenrePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Genre</Text>
+              <TouchableOpacity onPress={() => setShowGenrePicker(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={genres}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.genreOption}
+                  onPress={() => {
+                    setGenre(item);
+                    setShowGenrePicker(false);
+                  }}
+                >
+                  <Text style={[
+                    styles.genreOptionText,
+                    genre === item && styles.genreOptionTextSelected
+                  ]}>
+                    {item}
+                  </Text>
+                  {genre === item && <Text style={styles.genreCheckmark}>✓</Text>}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -502,6 +675,80 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  genrePicker: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  genrePickerText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  genrePickerPlaceholder: {
+    fontSize: 16,
+    color: '#999',
+  },
+  genrePickerArrow: {
+    fontSize: 12,
+    color: '#666',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  modalClose: {
+    fontSize: 24,
+    color: '#666',
+    padding: 4,
+  },
+  genreOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  genreOptionText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  genreOptionTextSelected: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  genreCheckmark: {
+    fontSize: 20,
+    color: '#007AFF',
     fontWeight: '600',
   },
 });
