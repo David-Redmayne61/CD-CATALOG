@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, query, where } from 'firebase/firestore';
 
 // Firebase configuration
 const firebaseConfig = {
@@ -74,6 +74,33 @@ export const deleteCD = async (id: string): Promise<void> => {
   } catch (error) {
     console.error('Error deleting CD:', error);
     throw error;
+  }
+};
+
+// Check if a CD with the given barcode already exists
+export const checkDuplicateBarcode = async (barcode: string, excludeId?: string): Promise<CD | null> => {
+  try {
+    if (!barcode) return null;
+    
+    const q = query(collection(db, 'cds'), where('barcode', '==', barcode));
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) return null;
+    
+    // If excludeId is provided (for editing), ignore that CD
+    const duplicates = querySnapshot.docs.filter(doc => doc.id !== excludeId);
+    
+    if (duplicates.length === 0) return null;
+    
+    const duplicateDoc = duplicates[0];
+    return {
+      id: duplicateDoc.id,
+      ...duplicateDoc.data(),
+      dateAdded: duplicateDoc.data().dateAdded?.toDate() || new Date()
+    } as CD;
+  } catch (error) {
+    console.error('Error checking for duplicates:', error);
+    return null;
   }
 };
 

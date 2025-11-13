@@ -5,9 +5,10 @@ import { CD } from '../types';
 interface CDCardProps {
   cd: CD;
   onDelete: (id: string) => void;
+  onEdit: (cd: CD) => void;
 }
 
-export const CDCard: React.FC<CDCardProps> = ({ cd, onDelete }) => {
+export const CDCard: React.FC<CDCardProps> = ({ cd, onDelete, onEdit }) => {
   const handleDelete = () => {
     if (Platform.OS === 'web') {
       const confirmed = window.confirm(
@@ -32,6 +33,15 @@ export const CDCard: React.FC<CDCardProps> = ({ cd, onDelete }) => {
     }
   };
 
+  const formatDuration = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours > 0) {
+      return `${hours}:${mins.toString().padStart(2, '0')}`;
+    }
+    return `${mins} min`;
+  };
+
   return (
     <View style={styles.card}>
       <View style={styles.cardContent}>
@@ -45,6 +55,12 @@ export const CDCard: React.FC<CDCardProps> = ({ cd, onDelete }) => {
             <Text style={styles.detailText}>{cd.year}</Text>
             <Text style={styles.separator}>•</Text>
             <Text style={styles.detailText}>{cd.genre}</Text>
+            {cd.duration && cd.duration > 0 && (
+              <>
+                <Text style={styles.separator}>•</Text>
+                <Text style={styles.detailText}>{formatDuration(cd.duration)}</Text>
+              </>
+            )}
           </View>
           {cd.barcode && (
             <Text style={styles.barcode}>Barcode: {cd.barcode}</Text>
@@ -54,9 +70,14 @@ export const CDCard: React.FC<CDCardProps> = ({ cd, onDelete }) => {
           )}
         </View>
       </View>
-      <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-        <Text style={styles.deleteButtonText}>Delete</Text>
-      </TouchableOpacity>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.editButton} onPress={() => onEdit(cd)}>
+          <Text style={styles.editButtonText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+          <Text style={styles.deleteButtonText}>Delete</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -121,12 +142,30 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontStyle: 'italic',
   },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  editButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    flex: 1,
+    alignItems: 'center',
+  },
+  editButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   deleteButton: {
     backgroundColor: '#ff4444',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 6,
-    alignSelf: 'flex-start',
+    flex: 1,
+    alignItems: 'center',
   },
   deleteButtonText: {
     color: '#fff',

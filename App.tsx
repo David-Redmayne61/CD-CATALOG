@@ -31,7 +31,9 @@ export default function App() {
         <Stack.Screen 
           name="AddCD" 
           component={AddCDScreen}
-          options={{ title: 'Add New CD' }}
+          options={({ route }) => ({ 
+            title: route.params?.editCD ? 'Edit CD' : 'Add New CD' 
+          })}
         />
         <Stack.Screen 
           name="BarcodeScanner" 
