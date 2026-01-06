@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write access to the cds collection for all users
+    // This is appropriate for a personal app without authentication
+    match /cds/{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
