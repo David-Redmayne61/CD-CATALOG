@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: npm ci && npm run build
       - name: Fix overflow in index.html
-        run: sed -i 's/overflow: hidden;/overflow: auto;/g' dist/index.html
+        run: "sed -i 's/overflow: hidden;/overflow: auto;/g' dist/index.html"
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
