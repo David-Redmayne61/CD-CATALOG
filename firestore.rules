@@ -7,5 +7,10 @@ service cloud.firestore {
     match /cds/{document=**} {
       allow read, write: if true;
     }
+    
+    // Allow read/write access to the dvds collection for all users
+    match /dvds/{document=**} {
+      allow read, write: if true;
+    }
   }
 }

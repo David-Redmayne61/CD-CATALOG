@@ -2,19 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
 import { WebBarcodeScannerScreen } from './WebBarcodeScannerScreen';
 
 type BarcodeScannerScreenNavigationProp = StackNavigationProp<RootStackParamList, 'BarcodeScanner'>;
+type BarcodeScannerScreenRouteProp = RouteProp<RootStackParamList, 'BarcodeScanner'>;
 
 interface Props {
   navigation: BarcodeScannerScreenNavigationProp;
+  route: BarcodeScannerScreenRouteProp;
 }
 
-export const BarcodeScannerScreen: React.FC<Props> = ({ navigation }) => {
+export const BarcodeScannerScreen: React.FC<Props> = ({ navigation, route }) => {
+  const mediaType = route.params?.mediaType || 'cd';
+  
   // Use web-specific scanner on web platform
   if (Platform.OS === 'web') {
-    return <WebBarcodeScannerScreen navigation={navigation} />;
+    return <WebBarcodeScannerScreen navigation={navigation} route={route} />;
   }
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -30,9 +35,12 @@ export const BarcodeScannerScreen: React.FC<Props> = ({ navigation }) => {
   const handleBarCodeScanned = ({ data }: { type: string; data: string }) => {
     setScanned(true);
     
+    const mediaLabel = mediaType === 'cd' ? 'CD' : 'DVD';
+    const navigationTarget = mediaType === 'cd' ? 'AddCD' : 'AddDVD';
+    
     Alert.alert(
       'Barcode Scanned',
-      `Barcode: ${data}\n\nWould you like to add this CD?`,
+      `Barcode: ${data}\n\nWould you like to add this ${mediaLabel}?`,
       [
         {
           text: 'Cancel',
@@ -40,8 +48,8 @@ export const BarcodeScannerScreen: React.FC<Props> = ({ navigation }) => {
           style: 'cancel',
         },
         {
-          text: 'Add CD',
-          onPress: () => navigation.navigate('AddCD', { barcode: data }),
+          text: `Add ${mediaLabel}`,
+          onPress: () => navigation.navigate(navigationTarget as any, { barcode: data }),
         },
       ]
     );

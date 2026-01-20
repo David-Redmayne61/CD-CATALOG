@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, TextInput, ScrollView, Platform } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList, CD } from '../types';
-import { getCDs, deleteCD, updateCD } from '../services/firebase';
+import { RootStackParamList, CD, DVD } from '../types';
+import { getCDs, deleteCD, updateCD, getDVDs, deleteDVD, updateDVD } from '../services/firebase';
 import { CDCard } from '../components/CDCard';
+import { DVDCard } from '../components/DVDCard';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -13,9 +14,11 @@ interface Props {
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const [cds, setCds] = useState<CD[]>([]);
+  const [dvds, setDvds] = useState<DVD[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'cds' | 'dvds'>('cds');
 
   const loadCDs = async () => {
     try {
@@ -31,29 +34,48 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  const loadDVDs = async () => {
+    try {
+      const fetchedDVDs = await getDVDs();
+      setDvds(fetchedDVDs.sort((a, b) => 
+        b.dateAdded.getTime() - a.dateAdded.getTime()
+      ));
+    } catch (error) {
+      console.error('Error loading DVDs:', error);
+    }
+  };
+
   useEffect(() => {
     loadCDs();
+    loadDVDs();
   }, []);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       loadCDs();
+      loadDVDs();
     });
     return unsubscribe;
   }, [navigation]);
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteCD(id);
-      setCds(cds.filter(cd => cd.id !== id));
+      if (activeTab === 'cds') {
+        await deleteCD(id);
+        setCds(cds.filter(cd => cd.id !== id));
+      } else {
+        await deleteDVD(id);
+        setDvds(dvds.filter(dvd => dvd.id !== id));
+      }
     } catch (error) {
-      console.error('Error deleting CD:', error);
+      console.error('Error deleting item:', error);
     }
   };
 
   const handleRefresh = () => {
     setRefreshing(true);
     loadCDs();
+    loadDVDs();
   };
 
   const handlePrint = () => {
@@ -303,7 +325,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     loadCDs();
   };
 
-  // Filter and sort CDs based on search query
+  // Filter and sort based on active tab and search query
   const filteredCDs = cds
     .filter(cd => {
       if (!searchQuery.trim()) return true;
@@ -316,7 +338,24 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         cd.barcode?.toLowerCase().includes(query)
       );
     })
-    .sort((a, b) => a.title.localeCompare(b.title)); // Sort alphabetically by title
+    .sort((a, b) => a.title.localeCompare(b.title));
+
+  const filteredDVDs = dvds
+    .filter(dvd => {
+      if (!searchQuery.trim()) return true;
+      
+      const query = searchQuery.toLowerCase().trim();
+      return (
+        dvd.title?.toLowerCase().includes(query) ||
+        dvd.director?.toLowerCase().includes(query) ||
+        dvd.genre?.toLowerCase().trim().includes(query) ||
+        dvd.barcode?.toLowerCase().includes(query)
+      );
+    })
+    .sort((a, b) => a.title.localeCompare(b.title));
+
+  const currentItems = activeTab === 'cds' ? filteredCDs : filteredDVDs;
+  const totalItems = activeTab === 'cds' ? cds.length : dvds.length;
 
   if (loading) {
     return (
@@ -329,16 +368,37 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>My CD Collection</Text>
-        <Text style={styles.headerSubtitle}>{cds.length} CDs</Text>
+        <Text style={styles.headerTitle}>My Media Collection</Text>
+        <Text style={styles.headerSubtitle}>{cds.length} CDs • {dvds.length} DVDs</Text>
       </View>
 
-      {cds.length > 0 && (
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'cds' && styles.activeTab]}
+          onPress={() => setActiveTab('cds')}
+        >
+          <Text style={[styles.tabText, activeTab === 'cds' && styles.activeTabText]}>
+            CDs ({cds.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'dvds' && styles.activeTab]}
+          onPress={() => setActiveTab('dvds')}
+        >
+          <Text style={[styles.tabText, activeTab === 'dvds' && styles.activeTabText]}>
+            DVDs ({dvds.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {totalItems > 0 && (
         <>
           <View style={styles.searchContainer}>
             <TextInput
               style={styles.searchInput}
-              placeholder="Search by title, artist, genre, or barcode..."
+              placeholder={activeTab === 'cds' 
+                ? "Search by title, artist, genre, or barcode..." 
+                : "Search by title, director, genre, or barcode..."}
               placeholderTextColor="#999"
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -355,7 +415,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
             )}
           </View>
           
-          {Platform.OS === 'web' && (
+          {Platform.OS === 'web' && activeTab === 'cds' && (
             <View style={styles.actionBar}>
               <TouchableOpacity
                 style={styles.printButton}
@@ -384,36 +444,53 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         </>
       )}
 
-      {cds.length === 0 ? (
+      {totalItems === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No CDs in your collection yet</Text>
-          <Text style={styles.emptySubtext}>Tap the + button to add your first CD</Text>
+          <Text style={styles.emptyText}>No {activeTab === 'cds' ? 'CDs' : 'DVDs'} in your collection yet</Text>
+          <Text style={styles.emptySubtext}>Tap the + button to add your first {activeTab === 'cds' ? 'CD' : 'DVD'}</Text>
         </View>
-      ) : filteredCDs.length === 0 ? (
+      ) : currentItems.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>No results found</Text>
           <Text style={styles.emptySubtext}>Try a different search term</Text>
         </View>
       ) : (
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          {filteredCDs.map((cd) => (
-            <CDCard 
-              key={cd.id}
-              cd={cd} 
-              onDelete={handleDelete}
-              onEdit={(cd) => navigation.navigate('AddCD', { editCD: cd })}
-            />
-          ))}
+          {activeTab === 'cds' 
+            ? filteredCDs.map((cd) => (
+                <CDCard 
+                  key={cd.id}
+                  cd={cd} 
+                  onDelete={handleDelete}
+                  onEdit={(cd) => navigation.navigate('AddCD', { editCD: cd })}
+                />
+              ))
+            : filteredDVDs.map((dvd) => (
+                <DVDCard 
+                  key={dvd.id}
+                  dvd={dvd} 
+                  onDelete={handleDelete}
+                  onEdit={(dvd) => navigation.navigate('AddDVD', { editDVD: dvd })}
+                />
+              ))
+          }
         </ScrollView>
       )}
 
       <View style={styles.buttonContainer}>
         <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('AddCD')}
+          style={styles.scanButton}
+          onPress={() => navigation.navigate('BarcodeScanner', { mediaType: activeTab })}
         >
-          <Text style={styles.buttonText}>+ Add CD</Text>
-          <Text style={styles.buttonSubtext}>You can type the barcode manually</Text>
+          <Text style={styles.scanButtonText}>📷 Scan Barcode</Text>
+          <Text style={styles.scanButtonSubtext}>Recommended - Auto-fills all details</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => navigation.navigate(activeTab === 'cds' ? 'AddCD' : 'AddDVD')}
+        >
+          <Text style={styles.buttonText}>✏️ Manual Entry</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -447,6 +524,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#fff',
     opacity: 0.9,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: '#007AFF',
+  },
+  tabText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: '#007AFF',
+    fontWeight: '700',
   },
   scrollView: {
     flex: 1,
@@ -542,9 +644,33 @@ const styles = StyleSheet.create({
     borderTopColor: '#ddd',
     zIndex: 1000,
   },
+  scanButton: {
+    backgroundColor: '#34C759',
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    marginBottom: 12,
+  },
+  scanButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  scanButtonSubtext: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '400',
+    marginTop: 4,
+    opacity: 0.9,
+  },
   addButton: {
     backgroundColor: '#007AFF',
-    padding: 18,
+    padding: 14,
     borderRadius: 12,
     alignItems: 'center',
     shadowColor: '#000',
@@ -555,8 +681,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
   },
   buttonSubtext: {
     color: '#fff',

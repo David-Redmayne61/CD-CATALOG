@@ -1,16 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
 type WebBarcodeScannerScreenNavigationProp = StackNavigationProp<RootStackParamList, 'BarcodeScanner'>;
+type WebBarcodeScannerScreenRouteProp = RouteProp<RootStackParamList, 'BarcodeScanner'>;
 
 interface Props {
   navigation: WebBarcodeScannerScreenNavigationProp;
+  route: WebBarcodeScannerScreenRouteProp;
 }
 
-export const WebBarcodeScannerScreen: React.FC<Props> = ({ navigation }) => {
+export const WebBarcodeScannerScreen: React.FC<Props> = ({ navigation, route }) => {
+  const mediaType = route.params?.mediaType || 'cd';
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isScanning = useRef(false);
   const [error, setError] = useState<string>('');
@@ -92,8 +96,11 @@ export const WebBarcodeScannerScreen: React.FC<Props> = ({ navigation }) => {
   const handleScan = async (data: string) => {
     await stopScanner();
     
-    if (confirm(`Barcode: ${data}\n\nWould you like to add this CD?`)) {
-      navigation.navigate('AddCD', { barcode: data });
+    const mediaLabel = mediaType === 'cd' ? 'CD' : 'DVD';
+    const navigationTarget = mediaType === 'cd' ? 'AddCD' : 'AddDVD';
+    
+    if (confirm(`Barcode: ${data}\n\nWould you like to add this ${mediaLabel}?`)) {
+      navigation.navigate(navigationTarget as any, { barcode: data });
     } else {
       startScanner();
     }
