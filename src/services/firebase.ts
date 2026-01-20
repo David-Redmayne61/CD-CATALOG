@@ -27,6 +27,20 @@ export interface CD {
   dateAdded: Date;
 }
 
+export interface DVD {
+  id?: string;
+  title: string;
+  director: string;
+  year: number;
+  genre: string;
+  barcode?: string;
+  coverUrl?: string;
+  runtime?: number;
+  rating?: string;
+  notes?: string;
+  dateAdded: Date;
+}
+
 // Add a new CD to Firestore
 export const addCD = async (cd: Omit<CD, 'id'>): Promise<string> => {
   try {
@@ -100,6 +114,85 @@ export const checkDuplicateBarcode = async (barcode: string, excludeId?: string)
     } as CD;
   } catch (error) {
     console.error('Error checking for duplicates:', error);
+    return null;
+  }
+};
+
+// DVD CRUD Operations
+
+// Add a new DVD to Firestore
+export const addDVD = async (dvd: Omit<DVD, 'id'>): Promise<string> => {
+  try {
+    const docRef = await addDoc(collection(db, 'dvds'), {
+      ...dvd,
+      dateAdded: new Date()
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error('Error adding DVD:', error);
+    throw error;
+  }
+};
+
+// Get all DVDs from Firestore
+export const getDVDs = async (): Promise<DVD[]> => {
+  try {
+    const querySnapshot = await getDocs(collection(db, 'dvds'));
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      dateAdded: doc.data().dateAdded?.toDate() || new Date()
+    } as DVD));
+  } catch (error) {
+    console.error('Error getting DVDs:', error);
+    throw error;
+  }
+};
+
+// Update a DVD
+export const updateDVD = async (id: string, updates: Partial<DVD>): Promise<void> => {
+  try {
+    const dvdRef = doc(db, 'dvds', id);
+    await updateDoc(dvdRef, updates);
+  } catch (error) {
+    console.error('Error updating DVD:', error);
+    throw error;
+  }
+};
+
+// Delete a DVD
+export const deleteDVD = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'dvds', id));
+  } catch (error) {
+    console.error('Error deleting DVD:', error);
+    throw error;
+  }
+};
+
+// Check if a DVD with the given barcode already exists
+export const checkDuplicateDVDBarcode = async (barcode: string, excludeId?: string): Promise<DVD | null> => {
+  try {
+    if (!barcode) return null;
+    
+    const q = query(collection(db, 'dvds'), where('barcode', '==', barcode));
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) return null;
+    
+    // If excludeId is provided (for editing), ignore that DVD
+    const duplicates = querySnapshot.docs.filter(doc => doc.id !== excludeId);
+    
+    if (duplicates.length === 0) return null;
+    
+    const duplicateDoc = duplicates[0];
+    return {
+      id: duplicateDoc.id,
+      ...duplicateDoc.data(),
+      dateAdded: duplicateDoc.data().dateAdded?.toDate() || new Date()
+    } as DVD;
+  } catch (error) {
+    console.error('Error checking for duplicate DVDs:', error);
     return null;
   }
 };
